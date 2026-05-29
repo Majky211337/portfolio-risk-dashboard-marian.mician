@@ -40,6 +40,19 @@ BENCHMARK_COLOR = "#94a3b8"
 DRAWDOWN_COLOR = "#ef4444"
 
 
+def downsample_for_chart(series_or_df, max_points: int = 1500):
+    """
+    Stride-downsample dlhej časovej série pre client-side wire payload.
+    Pri dennej granularite a 20-ročnom range posielame 5000+ bodov per trace —
+    týždenný / dvojdenný step zachová tvar krivky a poslania ~70 % bajtov.
+    """
+    n = len(series_or_df)
+    if n <= max_points:
+        return series_or_df
+    step = max(1, n // max_points)
+    return series_or_df.iloc[::step]
+
+
 def chart_theme(theme):
     """Returns dict of theme-aware colors for plotly charts."""
     if theme == "dark":
@@ -128,7 +141,7 @@ ROLLING_WINDOWS = {
 }
 
 MONTE_CARLO_HORIZONS = ["5Y", "10Y", "20Y", "30Y"]
-MONTE_CARLO_SIMS = ["500", "1000", "5000"]
+MONTE_CARLO_SIMS = ["500", "1000", "2000"]  # capped — 5000 sims at 30Y peaked ~300 MB and OOM-killed the free Render dyno
 
 
 ROLLING_METRICS = {
@@ -673,10 +686,11 @@ def build_value_chart(portfolio, benchmark_portfolio=None, benchmark_name="Bench
     t = chart_theme(theme)
     fig = go.Figure()
 
+    pv = downsample_for_chart(portfolio["Portfolio Value"])
     fig.add_trace(
         go.Scatter(
-            x=portfolio.index,
-            y=portfolio["Portfolio Value"],
+            x=pv.index,
+            y=pv,
             mode="lines",
             name="Selected Portfolio",
             line=dict(color=LINE_COLOR, width=2.7),
@@ -685,10 +699,11 @@ def build_value_chart(portfolio, benchmark_portfolio=None, benchmark_name="Bench
     )
 
     if benchmark_portfolio is not None:
+        bv = downsample_for_chart(benchmark_portfolio["Portfolio Value"])
         fig.add_trace(
             go.Scatter(
-                x=benchmark_portfolio.index,
-                y=benchmark_portfolio["Portfolio Value"],
+                x=bv.index,
+                y=bv,
                 mode="lines",
                 name=benchmark_name,
                 line=dict(color=BENCHMARK_COLOR, width=2.2, dash="dash"),
@@ -731,10 +746,11 @@ def build_drawdown_chart(portfolio, theme="light"):
     t = chart_theme(theme)
     fig = go.Figure()
 
+    dd = downsample_for_chart(portfolio["Drawdown"])
     fig.add_trace(
         go.Scatter(
-            x=portfolio.index,
-            y=portfolio["Drawdown"],
+            x=dd.index,
+            y=dd,
             mode="lines",
             name="Drawdown",
             line=dict(color=DRAWDOWN_COLOR, width=1.8),
@@ -780,7 +796,7 @@ def build_rolling_metrics_chart(portfolio, metric_name, window_label, risk_free_
         risk_free_rate=risk_free_rate,
     )
 
-    series = rolling_df[metric_config["column"]].dropna()
+    series = downsample_for_chart(rolling_df[metric_config["column"]].dropna())
 
     fig = go.Figure()
 
@@ -899,8 +915,12 @@ def build_monte_carlo_chart(portfolio, horizon_label, n_sims_label, theme="light
         )
         return fig
 
-    # Historical line (last 2 years for context)
-    hist = portfolio["Portfolio Value"].iloc[-min(len(portfolio), 504):]
+    # Historical line (last 2 years for context, downsampled)
+    hist = downsample_for_chart(
+        portfolio["Portfolio Value"].iloc[-min(len(portfolio), 504):],
+        max_points=300,
+    )
+    forecast = downsample_for_chart(forecast, max_points=600)
     fig.add_trace(
         go.Scatter(
             x=hist.index,

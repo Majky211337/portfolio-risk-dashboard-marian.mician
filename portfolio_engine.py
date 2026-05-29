@@ -18,7 +18,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # 2. Načítanie a príprava dát
 # --------------------------------------------------
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=2)
 def _load_prices_cached(path_str: str, mtime: float) -> pd.DataFrame:
     """Inner cached load — keyed on path + mtime so file changes invalidate cache."""
     prices = pd.read_csv(path_str, index_col=0, parse_dates=True)
@@ -105,7 +105,7 @@ def validate_assets(prices: pd.DataFrame, weights: pd.Series) -> None:
 # 4. Výpočet portfólia s ročným rebalancingom
 # --------------------------------------------------
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=16)
 def _portfolio_cached(
     weights_key: tuple,
     initial_value: float,
@@ -260,17 +260,19 @@ def _compute_rebalanced_portfolio(
 
     portfolio = pd.DataFrame(records).set_index("Date")
 
-    # Denný výnos portfólia
-    portfolio["Daily Return"] = portfolio["Portfolio Value"].pct_change()
+    # Iba 3 stĺpce sú v Dash aplikácii reálne použité — zvyšok by len rástol cache pamäť.
+    pv = portfolio["Portfolio Value"]
+    running_max = pv.cummax()
 
-    # Kumulatívny výnos
-    portfolio["Cumulative Return"] = portfolio["Portfolio Value"] / initial_value - 1
+    result = pd.DataFrame(
+        {
+            "Portfolio Value": pv,
+            "Daily Return": pv.pct_change(),
+            "Drawdown": pv / running_max - 1,
+        }
+    )
 
-    # Drawdown
-    portfolio["Running Max"] = portfolio["Portfolio Value"].cummax()
-    portfolio["Drawdown"] = portfolio["Portfolio Value"] / portfolio["Running Max"] - 1
-
-    return portfolio
+    return result
 
 
 # --------------------------------------------------
@@ -408,6 +410,9 @@ def calculate_rolling_metrics(
     })
 
 
+MC_MAX_SIMS = 2000  # cap to keep peak memory under ~80 MB on free tier
+
+
 def monte_carlo_forecast(
     portfolio: pd.DataFrame,
     horizon_years: int = 10,
@@ -418,42 +423,47 @@ def monte_carlo_forecast(
     """
     Bootstrap simulácia budúcich ciest hodnoty portfolia.
 
-    - Vzorkuje denné výnosy (s replacementom) z historického rozdelenia portfolia
-    - n_simulations ciest, každá horizon_years * trading_days dní
-    - Vracia DataFrame s percentilmi (p5, p25, p50, p75, p95) cez čas
-    """
-    daily_returns = portfolio["Daily Return"].dropna().to_numpy()
-    if len(daily_returns) < 30:
-        return pd.DataFrame(
-            columns=["p5", "p25", "p50", "p75", "p95"],
-        )
+    Pamäťovo šetrné:
+    - float32 (50 % menej než float64)
+    - n_simulations capnuté na MC_MAX_SIMS (2000) — 5000 by žralo ~300 MB pri 30Y
+    - cumprod in-place
 
+    Vracia DataFrame s percentilmi (p5, p25, p50, p75, p95) cez čas.
+    """
+    daily_returns = portfolio["Daily Return"].dropna().to_numpy(dtype=np.float32)
+    if len(daily_returns) < 30:
+        return pd.DataFrame(columns=["p5", "p25", "p50", "p75", "p95"])
+
+    n_simulations = min(int(n_simulations), MC_MAX_SIMS)
     starting_value = float(portfolio["Portfolio Value"].iloc[-1])
     horizon_days = int(horizon_years * trading_days)
 
     rng = np.random.default_rng(seed)
-    sample_idx = rng.integers(0, len(daily_returns), size=(n_simulations, horizon_days))
-    sampled = daily_returns[sample_idx]  # shape (n_sims, horizon_days)
+    # int32 stačí — max hodnota je len(daily_returns) ~ 5000. Šetrí 50 % oproti int64.
+    sample_idx = rng.integers(
+        0, len(daily_returns), size=(n_simulations, horizon_days), dtype=np.int32
+    )
+    paths = daily_returns[sample_idx]  # float32
+    del sample_idx  # 60+ MB voľná pamäť pred cumprod
 
-    # Cumulative product of (1 + r) along the time axis, scaled by starting value
-    growth = np.cumprod(1.0 + sampled, axis=1) * starting_value
+    # In-place: (1 + r) → cumprod → scale. Žiadne intermediate kópie.
+    paths += 1.0
+    np.cumprod(paths, axis=1, out=paths)
+    paths *= starting_value
 
-    # Prepend starting value column
-    start_col = np.full((n_simulations, 1), starting_value)
-    paths = np.concatenate([start_col, growth], axis=1)
-
-    percentiles = np.percentile(paths, [5, 25, 50, 75, 95], axis=0)
+    percentiles = np.percentile(paths, [5, 25, 50, 75, 95], axis=0).astype(np.float32)
 
     last_date = portfolio.index[-1]
     business_days = pd.bdate_range(start=last_date, periods=horizon_days + 1)
 
+    # Prepend starting value as first day
     return pd.DataFrame(
         {
-            "p5": percentiles[0],
-            "p25": percentiles[1],
-            "p50": percentiles[2],
-            "p75": percentiles[3],
-            "p95": percentiles[4],
+            "p5":  np.concatenate(([starting_value], percentiles[0])),
+            "p25": np.concatenate(([starting_value], percentiles[1])),
+            "p50": np.concatenate(([starting_value], percentiles[2])),
+            "p75": np.concatenate(([starting_value], percentiles[3])),
+            "p95": np.concatenate(([starting_value], percentiles[4])),
         },
         index=business_days,
     )
