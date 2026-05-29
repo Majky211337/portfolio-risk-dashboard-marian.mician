@@ -1,0 +1,72 @@
+name: Refresh daily ETF data
+
+on:
+  # Run every Saturday at 06:00 UTC (Friday close has settled by then)
+  schedule:
+    - cron: "0 6 * * 6"
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download fresh ETF data
+        run: python download_daily_data.py
+
+      - name: Check for changes
+        id: diff
+        run: |
+          # Only check CSVs — XLSX files have timestamp metadata that always differs
+          if git diff --quiet -- 'data/*.csv'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes in CSV data. Skipping commit."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "CSV data has changed:"
+            git diff --stat -- 'data/*.csv'
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          DATE=$(date -u +'%Y-%m-%d')
+          git commit -m "chore(data): weekly refresh ${DATE}"
+          git push
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Data refresh summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.diff.outputs.changed }}" = "true" ]; then
+            echo "Data refreshed and committed at $(date -u)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No new data — skipped commit." >> "$GITHUB_STEP_SUMMARY"
+          fi

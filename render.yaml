@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: portfolio-risk-dashboard-marian-mician
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app_fixed:server --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DASH_DEBUG
+        value: "0"
