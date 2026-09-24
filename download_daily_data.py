@@ -1,37 +1,37 @@
+"""
+Download daily adjusted close prices for the dashboard's ETFs from Yahoo Finance.
+
+Run by the scheduled GitHub Action (.github/workflows/refresh-data.yml) and can
+also be run manually:  python download_daily_data.py
+
+Writes to data/:
+- daily_adjusted_prices_all.csv     every date on which at least one ETF traded
+- daily_adjusted_prices_common.csv  only dates where all ETFs have a price (used by the app)
+plus .xlsx copies of both.
+
+If any ticker cannot be downloaded the script exits with an error and leaves
+the existing files untouched, so the app keeps serving the last good dataset.
+"""
+
 import time
 from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
 
-
-# --------------------------------------------------
-# 1. Nastavenia
-# --------------------------------------------------
-
 TICKERS = ["SPY", "GLD", "AGG", "DBC"]
-
 START_DATE = "2006-01-01"
 END_DATE = None
 
-OUTPUT_DIR = Path("data")
-OUTPUT_DIR.mkdir(exist_ok=True)
+PROJECT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = PROJECT_DIR / "data"
+CACHE_DIR = PROJECT_DIR / "yf_cache"  # project-local timezone cache (avoids a stale global cache)
 
-# Vlastná cache priamo v projekte, aby sme obišli zaseknutú Windows cache
-CACHE_DIR = Path("yf_cache")
-CACHE_DIR.mkdir(exist_ok=True)
-yf.set_tz_cache_location(str(CACHE_DIR.resolve()))
-
-
-# --------------------------------------------------
-# 2. Funkcia na stiahnutie jedného tickeru
-# --------------------------------------------------
 
 def download_one_ticker(ticker: str, max_attempts: int = 3) -> pd.Series:
     for attempt in range(1, max_attempts + 1):
         try:
-            print(f"Sťahujem {ticker}, pokus {attempt}/{max_attempts}...")
-
+            print(f"Downloading {ticker}, attempt {attempt}/{max_attempts}...")
             df = yf.download(
                 tickers=ticker,
                 start=START_DATE,
@@ -43,71 +43,51 @@ def download_one_ticker(ticker: str, max_attempts: int = 3) -> pd.Series:
             )
 
             if df.empty:
-                raise ValueError(f"{ticker}: Yahoo vrátil prázdny dataset.")
+                raise ValueError("Yahoo returned an empty dataset.")
+            if "Adj Close" not in df.columns.get_level_values(0):
+                raise ValueError("the 'Adj Close' column is missing.")
 
-            if "Adj Close" not in df.columns:
-                raise ValueError(f"{ticker}: v dátach chýba stĺpec Adj Close.")
+            series = df["Adj Close"]
+            if isinstance(series, pd.DataFrame):  # recent yfinance returns (Price, Ticker) columns
+                series = series.iloc[:, 0]
+            series = series.dropna().rename(ticker)
 
-            series = df["Adj Close"].copy()
-            series.name = ticker
-
-            print(f"{ticker}: OK, počet riadkov: {len(series)}")
+            print(f"{ticker}: OK, {len(series)} rows")
             return series
 
-        except Exception as e:
-            print(f"{ticker}: chyba pri pokuse {attempt}: {e}")
+        except Exception as exc:
+            print(f"{ticker}: attempt {attempt} failed: {exc}")
             time.sleep(3)
 
-    raise RuntimeError(f"{ticker}: nepodarilo sa stiahnuť dáta po {max_attempts} pokusoch.")
+    raise RuntimeError(f"{ticker}: download failed after {max_attempts} attempts.")
 
-
-# --------------------------------------------------
-# 3. Hlavný beh — chránený main guardom, aby sa script
-#    neexekutoval pri importe modulu.
-# --------------------------------------------------
 
 def main():
-    all_series = []
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    CACHE_DIR.mkdir(exist_ok=True)
+    yf.set_tz_cache_location(str(CACHE_DIR))
 
+    all_series = []
     for ticker in TICKERS:
-        series = download_one_ticker(ticker)
-        all_series.append(series)
+        all_series.append(download_one_ticker(ticker))
         time.sleep(1)
 
-    adj_close = pd.concat(all_series, axis=1)
-    adj_close = adj_close.sort_index()
-    adj_close = adj_close.dropna(how="all")
-
-    # Dataset iba pre spoločné obdobie všetkých ETF
+    adj_close = pd.concat(all_series, axis=1).sort_index().dropna(how="all")
+    adj_close.index.name = None
     adj_close_common = adj_close.dropna(how="any")
 
-    # 4. Uloženie dát
+    if adj_close_common.empty:
+        raise RuntimeError("No dates with prices for every ETF. Keeping the existing data.")
+
     adj_close.to_csv(OUTPUT_DIR / "daily_adjusted_prices_all.csv")
     adj_close_common.to_csv(OUTPUT_DIR / "daily_adjusted_prices_common.csv")
-
     adj_close.to_excel(OUTPUT_DIR / "daily_adjusted_prices_all.xlsx")
     adj_close_common.to_excel(OUTPUT_DIR / "daily_adjusted_prices_common.xlsx")
 
-    # 5. Kontrola
-    print()
-    print("Hotovo.")
-    print()
-    print("Všetky dostupné dáta:")
-    print(adj_close.head())
-    print(adj_close.tail())
-
-    print()
-    print("Spoločné obdobie bez chýbajúcich hodnôt:")
-    print(adj_close_common.head())
-    print(adj_close_common.tail())
-
-    print()
-    print("Počet riadkov - všetky dáta:", len(adj_close))
-    print("Počet riadkov - spoločné obdobie:", len(adj_close_common))
-
-    print()
-    print("Začiatok spoločného obdobia:", adj_close_common.index.min())
-    print("Koniec spoločného obdobia:", adj_close_common.index.max())
+    print("\nDone.")
+    print("Rows (all dates):   ", len(adj_close))
+    print("Rows (common dates):", len(adj_close_common))
+    print("Common period:      ", adj_close_common.index.min().date(), "->", adj_close_common.index.max().date())
 
 
 if __name__ == "__main__":

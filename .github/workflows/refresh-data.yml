@@ -1,5 +1,10 @@
 name: Refresh daily ETF data
 
+# Yahoo Finance -> this workflow -> data/*.csv committed to main -> Streamlit
+# Community Cloud redeploys automatically on the push. If Yahoo is unavailable
+# the download step fails and nothing is committed, so the app keeps serving
+# the last good dataset.
+
 on:
   # Run every Saturday at 06:00 UTC (Friday close has settled by then)
   schedule:
@@ -28,11 +33,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements-data.txt
 
-      - name: Install dependencies
+      - name: Install data dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-data.txt
 
       - name: Download fresh ETF data
         run: python download_daily_data.py

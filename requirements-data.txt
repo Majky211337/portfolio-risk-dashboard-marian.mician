@@ -1,0 +1,4 @@
+# Only needed by download_daily_data.py (scheduled GitHub Action), not by the app.
+pandas>=2.2,<4
+yfinance>=0.2.50
+openpyxl>=3.1

@@ -18,9 +18,10 @@ Thumbs.db
 
 # yfinance / app artefacts
 yf_cache/
-outputs/*.csv
-outputs/*.xlsx
-!outputs/.gitkeep
+outputs/
 
 # Claude Code
 .claude/
+
+# Streamlit
+.streamlit/secrets.toml

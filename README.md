@@ -1,174 +1,175 @@
-# Interactive Portfolio Risk Dashboard
+# Portfolio Risk Dashboard
 
-A modern, interactive backtesting and risk-analysis dashboard for a 4-ETF multi-asset portfolio (SPY · GLD · AGG · DBC) — built with **Python**, **Dash** and **Plotly**.
+**Interactive multi-asset portfolio analytics, risk assessment and stress testing, built with Python and Streamlit.**
 
-> **Built by [Marián Mičian](https://github.com/<your-user>)** · [Live demo →](https://portfolio-risk-dashboard-marian-mician.onrender.com)
+![Dashboard overview](docs/screenshots/01-overview.png)
 
-![Dashboard hero (light)](docs/screenshots/01-hero-light.png)
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+> Built by **Marián Mičian** · [Source code](https://github.com/Majky211337/portfolio-risk-dashboard-marian.mician)
 
 ---
 
-## ✨ Features
+## Overview
 
-### Core analytics
-- **12 risk metrics** with tooltips — End Value, CAGR, Volatility, Sharpe, Sortino, Calmar, Max Drawdown, Longest Drawdown, VaR 95%, Best/Worst Day
-- **Annual / Quarterly / Monthly / No rebalancing** — switch on the fly
-- **Crisis-period stress table** — Global Financial Crisis, COVID-19 Shock, 2022 Inflation
-- **Benchmark comparison** — SPY only, 60/40, Equity+Gold, custom
+Portfolio Risk Dashboard is an interactive tool for backtesting a four-asset ETF portfolio. You choose the weights of US equities, gold, bonds and commodities, a rebalancing rule, an analysis period and a benchmark. The dashboard then shows how the portfolio performed, how risky it was, how its assets moved together, how it behaved in past market crises, and what range of futures a bootstrap Monte Carlo simulation suggests.
 
-### Charts
-- **Portfolio Value vs Benchmark** time series
-- **Drawdown** underwater chart
-- **Target Allocation** donut
-- **Asset Correlation** heatmap (4×4)
-- **Monthly Returns** heatmap (year × month + yearly totals column)
-- **Rolling Metrics** — switchable Return / Volatility / Sharpe over 6M / 12M / 24M / 36M windows
-- **Monte Carlo Forecast** — bootstrap simulation (500–5000 paths) over 5–30Y horizons with 5/25/50/75/95 percentile fan chart
-- **12 inline sparklines** in metric cards
+All calculations run on locally stored daily adjusted close prices, so the app loads instantly and never depends on a live market-data API. A scheduled GitHub Action refreshes the data every week.
 
-### UX
-- **Dark / Light mode** toggle (preference saved to `localStorage`)
-- **Date quick-range buttons** — YTD / 1Y / 3Y / 5Y / 10Y / MAX
-- **Portfolio presets** — All Weather (Ray Dalio), Permanent Portfolio, Golden Butterfly, Equal Weight, Conservative, Aggressive Growth
-- **Shareable URL** — Copy share link button encodes the full configuration to a query string
-- **Loading spinners** on every chart for visual feedback
-- **Modern dashboard look** — gradient accents, glow hover, glassmorphism, tabular numerals
+## Features
 
-### Performance
-- **`@lru_cache`** on price loading + portfolio rebalancing → **~680× speed-up** on cached calls (412 ms → 0.6 ms)
-- Daily ETF data auto-refreshed weekly via **GitHub Actions** (`download_daily_data.py` runs every Saturday after market close)
+- **Portfolio configuration**: seven classic presets (60/15/15/10, All Weather, Permanent Portfolio, Golden Butterfly, Equal Weight, Conservative, Aggressive Growth) or custom weights. Weights are **validated to total 100%**, and no results are shown until they do. A *Normalize weights* button rescales them explicitly; weights are never adjusted silently.
+- **Rebalancing**: never, monthly, quarterly or annually.
+- **Analysis period**: any date range, plus shortcuts (YTD, 1Y–10Y, full history, and each crisis window).
+- **Benchmarks**: SPY only, 60/40, SPY + AGG (70/30) and SPY + GLD (80/20).
+- **Headline KPIs**: CAGR, volatility, Sharpe, Sortino, max drawdown and Calmar, each with its difference vs the benchmark and a sparkline.
+- **Performance**: growth of the initial investment (as value or cumulative return) against the benchmark, and a side-by-side table of every metric.
+- **Risk & drawdown**: underwater chart, daily return distribution with VaR / CVaR markers, longest drawdown, and best and worst days.
+- **Rolling analytics**: rolling return, volatility or Sharpe over 6M, 12M, 24M or 36M windows, against the benchmark.
+- **Diversification**: allocation donut, correlation heatmap with an automatic summary, and stand-alone statistics for each ETF.
+- **Calendar returns**: monthly returns heatmap with yearly totals, and calendar-year returns against the benchmark.
+- **Historical stress test**: portfolio vs benchmark return, max drawdown and volatility in the Global Financial Crisis, the COVID-19 crash and the 2022 inflation shock, with a path chart for each.
+- **Monte Carlo**: bootstrap simulation (500–2,000 paths, 5–30 years) with a percentile fan, sample paths, median / 5th / 95th percentile outcomes, and the probability of loss or of doubling.
+- **Shareable configurations**: every setting is stored in the URL, so you can copy the address bar to share an exact scenario.
 
----
-
-## 🖼️ Gallery
-
-| Light mode | Dark mode |
+| Risk & drawdown | Stress test |
 |---|---|
-| ![Light hero](docs/screenshots/01-hero-light.png) | ![Dark hero](docs/screenshots/05-hero-dark.png) |
-| ![Light charts](docs/screenshots/02-charts-light.png) | ![Dark charts](docs/screenshots/06-charts-dark.png) |
+| ![Risk](docs/screenshots/02-risk.png) | ![Stress test](docs/screenshots/05-stress-test.png) |
+| **Diversification** | **Monte Carlo** |
+| ![Diversification](docs/screenshots/03-diversification.png) | ![Monte Carlo](docs/screenshots/06-monte-carlo.png) |
 
-| Heatmaps | Monte Carlo Forecast |
+## Asset universe
+
+| Ticker | Asset class | Instrument |
+|---|---|---|
+| **SPY** | US equities | SPDR S&P 500 ETF Trust: 500 large-cap US companies |
+| **GLD** | Gold | SPDR Gold Shares: physically backed gold |
+| **AGG** | US bonds | iShares Core US Aggregate Bond ETF: investment-grade US bonds |
+| **DBC** | Commodities | Invesco DB Commodity Index Tracking Fund: energy, metals and agriculture futures |
+
+Prices are daily **adjusted** closes, so dividends and distributions are included. The sample starts on 6 Feb 2006, the first date on which all four ETFs trade.
+
+## Analytics
+
+| Metric | Definition used |
 |---|---|
-| ![Heatmaps](docs/screenshots/03-heatmaps-light.png) | ![Monte Carlo](docs/screenshots/04-monte-carlo-light.png) |
+| **CAGR** | `(end / start) ^ (1 / years) − 1`, where years = calendar days ÷ 365.25 |
+| **Volatility** | standard deviation of daily returns × √252 |
+| **Sharpe ratio** | `(CAGR − risk-free rate) / volatility` |
+| **Sortino ratio** | `(CAGR − risk-free rate) / downside deviation`, where downside deviation = `sqrt( mean( min(rₜ − rf_daily, 0)² ) ) × √252`, with `rf_daily = (1 + rf)^(1/252) − 1` and the mean taken over **all** trading days (days above the target count as zero). This is the conventional target downside deviation.* |
+| **Maximum drawdown** | largest peak-to-trough fall in portfolio value |
+| **Calmar ratio** | `CAGR / |max drawdown|` |
+| **VaR 95%** | historical one-day Value-at-Risk: the 5th percentile of daily returns |
+| **CVaR 95%** | expected shortfall: the average of daily returns at or below the VaR |
+| **Correlation** | Pearson correlation of the ETFs' daily returns over the selected period |
+| **Stress testing** | the portfolio and benchmark backtested inside fixed historical crisis windows |
+| **Monte Carlo** | resampling of the portfolio's historical daily returns with replacement (bootstrap), fixed seed |
 
----
+\* *Methodology change in v2.0:* v1 averaged the squared shortfalls over the downside days only. That understated Sortino by a factor of √(share of downside days), about 0.67 for this dataset, which put it below the Sharpe ratio for the portfolios tested. For the default 60/15/15/10 portfolio (full history, annual rebalancing, rf = 0), Sortino changes from 0.70 (v1) to 1.06 (v2). All other metrics are unchanged from v1.
 
-## 🧰 Tech stack
+**Backtest mechanics:** the portfolio starts at its target weights. Each holding then drifts with its own daily returns, and the weights are reset on the first trading day of each new month, quarter or year, depending on the rebalancing rule.
 
-- **[Dash 3](https://dash.plotly.com/)** — Python web framework
-- **[Plotly](https://plotly.com/python/)** — interactive charts
-- **pandas / NumPy** — data layer
-- **[yfinance](https://github.com/ranaroussi/yfinance)** — historical price feed
-- **gunicorn** — production WSGI server
-- **GitHub Actions** — weekly data refresh
-- **Render.com** — free deployment target
+## Technology
 
----
+- **Python 3.12+**
+- **Streamlit**: UI, caching (`st.cache_data`), fragments, and URL-bound widgets
+- **pandas / NumPy**: data handling and vectorized portfolio calculations
+- **Plotly**: interactive charts
+- **yfinance**: historical price download (data refresh only)
+- **GitHub Actions**: weekly automated data refresh
 
-## 🚀 Run locally
+## Project structure
 
-```bash
-git clone https://github.com/<your-user>/portfolio-risk-dashboard.git
-cd portfolio-risk-dashboard
-
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate      # macOS / Linux
-
-pip install -r requirements.txt
-python app_fixed.py
+```text
+.
+├── app.py                     # Streamlit entry point: page layout and tabs
+├── portfolio_engine.py        # Calculation engine (no UI code): backtest, metrics, stress tests, Monte Carlo
+├── dashboard/
+│   ├── analytics.py           # Cached wrappers around the engine
+│   ├── charts.py              # Plotly figure builders
+│   ├── config.py              # Assets, presets, benchmarks, crisis periods, colours
+│   ├── sidebar.py             # Sidebar controls and input validation
+│   └── ui.py                  # Formatting helpers and minimal CSS
+├── download_daily_data.py     # Yahoo Finance → data/*.csv
+├── data/                      # Daily adjusted close prices (CSV + XLSX)
+├── .streamlit/config.toml     # Dark theme
+├── .github/workflows/refresh-data.yml
+├── scripts/capture_screenshots.py
+├── requirements.txt           # App dependencies
+└── requirements-data.txt      # Data-refresh dependencies
 ```
 
-Then open <http://localhost:8050>.
-
-To force a fresh download of the daily ETF prices:
+## Running locally
 
 ```bash
+git clone https://github.com/Majky211337/portfolio-risk-dashboard-marian.mician.git
+cd portfolio-risk-dashboard-marian.mician
+
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+The app opens at <http://localhost:8501>.
+
+To refresh the price data manually:
+
+```bash
+pip install -r requirements-data.txt
 python download_daily_data.py
 ```
 
----
+The engine can also be run as a quick command-line check: `python portfolio_engine.py`.
 
-## ☁️ Deploy to Render (free, ~3 clicks)
+## Testing
 
-> **📘 Full step-by-step guide:** see [DEPLOYMENT.md](DEPLOYMENT.md) for a 15-minute walkthrough from `git init` to live URL, including troubleshooting.
+A pytest suite (312 tests) validates the data and every calculation:
 
-This repo ships with a `render.yaml` blueprint, so deploying is one of:
-
-**Option A — Blueprint (recommended):**
-
-1. Push this repo to GitHub.
-2. Go to <https://dashboard.render.com/blueprints> → **New Blueprint Instance** → connect the repo.
-3. Render reads `render.yaml`, provisions a free Web Service, builds, and deploys.
-4. Your URL: `https://portfolio-risk-dashboard-marian-mician.onrender.com`
-
-**Option B — Manual:**
-
-1. New → **Web Service** → connect the repo.
-2. Settings:
-   - **Build command:** `pip install -r requirements.txt`
-   - **Start command:** `gunicorn app_fixed:server --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`
-   - **Runtime:** Python 3.12
-   - **Plan:** Free
-3. Deploy.
-
-> Free Render Web Services spin down after 15 min of inactivity. First request after sleep takes ~30 s to wake the dyno. Subsequent requests are instant. For zero cold starts, upgrade to the $7 / month "Starter" plan.
-
----
-
-## 📅 Weekly data refresh (GitHub Actions)
-
-`.github/workflows/refresh-data.yml` re-runs the yfinance download every **Saturday 06:00 UTC** and commits new CSVs back to the repo if anything changed. Render then auto-redeploys on push, so the live app stays fresh without manual work.
-
-Trigger manually anytime: **Actions → Refresh daily ETF data → Run workflow**.
-
----
-
-## 🧪 Project layout
-
-```
-.
-├── app_fixed.py              # Dash app, layout & callbacks
-├── portfolio_engine.py       # Pricing, rebalancing, metrics, Monte Carlo
-├── download_daily_data.py    # yfinance refresh script
-├── assets/
-│   └── styles_fixed.css      # CSS tokens, dark mode, gradient accents
-├── data/
-│   ├── daily_adjusted_prices_all.csv
-│   └── daily_adjusted_prices_common.csv
-├── scripts/
-│   └── capture_screenshots.py  # Playwright helper for docs/
-├── docs/
-│   └── screenshots/          # README images
-├── .github/workflows/
-│   └── refresh-data.yml      # Weekly cron
-├── render.yaml               # Render blueprint
-├── Procfile                  # Alternate process declaration
-├── runtime.txt               # Python version pin
-└── requirements.txt
+```bash
+pip install -r requirements-dev.txt
+pytest                              # full suite, ~2 minutes
+pytest -m "not network"             # skip the live Yahoo Finance comparison
+pytest -m "not network and not app" # engine only, no Streamlit app runs
 ```
 
----
+| File | What it checks |
+|---|---|
+| `test_data_integrity.py` | tickers, sorted/unique dates, no NaN, positive prices, no impossible or stale moves, the common-date dataset |
+| `test_source_data.py` | stored prices vs a fresh Yahoo Finance download (adjusted-close definitions, levels and returns) |
+| `test_backtest.py` | single-asset paths, SPY vs benchmark, weight reset and drift for each rebalancing rule, scaling with the initial investment |
+| `test_metrics.py` | every metric recomputed with independent NumPy formulas, including a Sortino deep-dive |
+| `test_stress.py` | crisis windows, NYSE trading-day subsets, the selected rebalancing rule, benchmark methodology |
+| `test_monte_carlo.py` | fixed-seed reproducibility, dimensions, return (not price) resampling, percentile ordering |
+| `test_regression.py` | 140 scenarios bitwise-identical to the original v1 engine (frozen in `tests/legacy/`); Sortino is checked against the exact v1 → v2 conversion instead |
+| `test_edge_cases.py` | invalid weights, dates, empty or missing data, both in the engine and in the running app |
 
-## 📝 Notes & design decisions
+## Deployment
 
-- **Bootstrap Monte Carlo** (sampling with replacement from realized daily returns) is used instead of a parametric GBM. It captures real-world fat tails without assuming normality.
-- **CSS custom properties** drive the whole theme — adding a new colour mode is ~30 lines of overrides.
-- **`@lru_cache` keyed on weights + date range + file mtime** — file changes invalidate cache automatically.
-- **Sparklines** are pure inline SVG encoded as base64 data URIs — no JS dependency, no extra HTTP requests.
+The app is designed for **[Streamlit Community Cloud](https://streamlit.io/cloud)**:
 
----
+1. Push the repository to GitHub.
+2. Sign in at <https://share.streamlit.io> with your GitHub account.
+3. Click **Create app** → **Deploy a public app from GitHub**.
+4. Select the repository, branch `main`, and main file path `app.py`.
+5. Optionally, under **Advanced settings**, choose Python 3.12 and a custom subdomain.
+6. Click **Deploy**.
 
-## 👤 Author
+Streamlit Community Cloud installs `requirements.txt` and redeploys automatically on every push to `main`.
 
-**Marián Mičian**
+### Automated data refresh
 
-If you find this useful, a ⭐ on the repo is appreciated.
+`.github/workflows/refresh-data.yml` runs every **Saturday at 06:00 UTC**, and can also be started from **Actions → Refresh daily ETF data → Run workflow**. It downloads fresh prices, commits the CSVs if they changed, and that push triggers a redeploy:
 
----
+```text
+Yahoo Finance → GitHub Action → data/*.csv committed → Streamlit Cloud redeploys → app reads CSV
+```
 
-## 📄 License
+If Yahoo Finance is unavailable, the workflow fails without committing anything, and the app keeps serving the last good dataset. The workflow needs **Settings → Actions → General → Workflow permissions → Read and write permissions**.
 
-MIT. Data via Yahoo Finance through `yfinance` — for personal / educational use; not investment advice.
+## Disclaimer
+
+This dashboard is for **educational and analytical purposes only** and is **not investment advice**. Backtests and simulations use historical data and do not guarantee future results. Market data comes from Yahoo Finance via `yfinance` and may contain errors.
+
+## License
+
+MIT
